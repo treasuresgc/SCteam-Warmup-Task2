@@ -1,0 +1,28 @@
+# Local workspace metadata
+.agents/
+.codex/
+
+# CUDA / C++ build outputs
+cases/*/main*
+cases/*/code_old.cu
+*.o
+*.obj
+*.out
+*.exe
+*.ptx
+*.cubin
+*.fatbin
+
+# Profiling artifacts
+*.nsys-rep
+*.sqlite
+*.qdrep
+*.ncu-rep
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.tmp
+*.log
