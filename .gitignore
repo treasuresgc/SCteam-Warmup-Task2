@@ -29,3 +29,6 @@ Thumbs.db
 *.swo
 *.tmp
 *.log
+
+# testfile
+testfile
