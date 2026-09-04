@@ -20,6 +20,7 @@ cases/05_extreme_200k/io_bandwidth_test.bin
 *.sqlite
 *.qdrep
 *.ncu-rep
+*_ncu*.csv
 
 # Editor / OS noise
 .DS_Store
