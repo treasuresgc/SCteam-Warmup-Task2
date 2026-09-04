@@ -14,6 +14,7 @@ cases/05_extreme_200k/io_bandwidth_test.bin
 *.ptx
 *.cubin
 *.fatbin
+#.bin
 
 # Profiling artifacts
 *.nsys-rep
