@@ -5,6 +5,8 @@
 # CUDA / C++ build outputs
 cases/*/main*
 cases/*/code_old.cu
+cases/05_extreme_200k/data/
+cases/05_extreme_200k/io_bandwidth_test.bin
 *.o
 *.obj
 *.out

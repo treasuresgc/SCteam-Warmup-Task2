@@ -19,8 +19,8 @@ namespace {
 
 __global__ void matmul_kernel(const double* A, const double* B, double* C, int m, int n, int k)
 {
-    __shared__ double As[CtaM][CtaK];
-    __shared__ double Bs[CtaK][CtaN];
+    __shared__ __align__(32) double As[CtaM][CtaK];
+    __shared__ __align__(32) double Bs[CtaK][CtaN];
 
     const int tx = threadIdx.x;
     const int ty = threadIdx.y;

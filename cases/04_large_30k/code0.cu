@@ -21,6 +21,9 @@ void run(double* A, double* B, double* C, int m, int n, int k)
 
     cublasHandle_t handle;
     cublasCreate(&handle);
+    cublasSetPointerMode(handle, CUBLAS_POINTER_MODE_HOST);
+    cublasSetMathMode(handle, CUBLAS_DEFAULT_MATH);
+    cublasSetAtomicsMode(handle, CUBLAS_ATOMICS_NOT_ALLOWED);
 
     const double alpha = 1.0;
     const double beta = 0.0;

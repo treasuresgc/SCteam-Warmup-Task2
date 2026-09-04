@@ -14,7 +14,7 @@ constexpr int CtaN = 128;
 constexpr int CtaK = 16;
 
 constexpr int WarpTileM = 32;
-constexpr int WarpTileN = 32;
+constexpr int WarpTileN = 64;
 constexpr int WarpCountM = CtaM / WarpTileM;
 constexpr int WarpCountN = CtaN / WarpTileN;
 constexpr int WarpTilesM = WarpTileM / WMMA_M;
@@ -23,21 +23,19 @@ constexpr int WarpTilesN = WarpTileN / WMMA_N;
 constexpr int ThreadsX = 32;
 constexpr int ThreadsY = WarpCountM * WarpCountN;
 constexpr int ThreadsPerBlock = ThreadsX * ThreadsY;
-constexpr int AsLdm = CtaK + 2;
-constexpr int BsLdm = CtaN + 2;
 
 static_assert(WarpCountM * WarpTileM == CtaM, "Warp tile M must divide CTA tile M");
 static_assert(WarpCountN * WarpTileN == CtaN, "Warp tile N must divide CTA tile N");
 static_assert(WarpTilesM * WMMA_M == WarpTileM, "WMMA tile M must divide warp tile M");
 static_assert(WarpTilesN * WMMA_N == WarpTileN, "WMMA tile N must divide warp tile N");
-static_assert(ThreadsX == 32 && ThreadsY == 16, "code4.cu expects blockDim to be (32, 16)");
+static_assert(ThreadsX == 32 && ThreadsY == 8, "code3.cu expects blockDim to be (32, 8)");
 
 namespace {
 
 __global__ void matmul_kernel(const double* A, const double* B, double* C, int m, int n, int k)
 {
-    __shared__ __align__(32) double As[CtaM][AsLdm];
-    __shared__ __align__(32) double Bs[CtaK][BsLdm];
+    __shared__ __align__(32) double As[CtaM][CtaK];
+    __shared__ __align__(32) double Bs[CtaK][CtaN];
 
     const int tx = threadIdx.x;
     const int ty = threadIdx.y;
@@ -80,12 +78,12 @@ __global__ void matmul_kernel(const double* A, const double* B, double* C, int m
         for (int kk = 0; kk < CtaK; kk += WMMA_K) {
             #pragma unroll
             for (int wm = 0; wm < WarpTilesM; ++wm) {
-                wmma::load_matrix_sync(a_frag[wm], &As[warp_row + wm * WMMA_M][kk], AsLdm);
+                wmma::load_matrix_sync(a_frag[wm], &As[warp_row + wm * WMMA_M][kk], CtaK);
             }
 
             #pragma unroll
             for (int wn = 0; wn < WarpTilesN; ++wn) {
-                wmma::load_matrix_sync(b_frag[wn], &Bs[kk][warp_col + wn * WMMA_N], BsLdm);
+                wmma::load_matrix_sync(b_frag[wn], &Bs[kk][warp_col + wn * WMMA_N], CtaN);
             }
 
             #pragma unroll

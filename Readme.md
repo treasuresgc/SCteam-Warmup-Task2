@@ -11,7 +11,7 @@
 - `C` 的形状是 `m x n`
 - 所有矩阵都按行优先的一维数组存储
 
-每个 case 中的 `gen.cpp` 负责生成固定规模的随机矩阵，并调用对应实现文件中的 `run(...)` 函数完成矩阵乘法。不同目录和不同 `code*.cu` 文件展示了从朴素算法到 GPU 优化版本的演进。
+每个 case 中的 `gen.cpp` 通常负责生成固定规模的输入矩阵，并调用对应实现文件中的 `run(...)` 函数完成矩阵乘法；极限规模 case 也可能先把输入写到磁盘，再由后续脚本读取。不同目录和不同 `code*.cu` / `code*.py` 文件展示了从朴素算法到 GPU 优化版本的演进。
 
 ## 目录结构
 
@@ -21,14 +21,14 @@ cases/
   02_small_256/     256 x 256 x 256，基础 CUDA 版本
   03_medium_5k/     4096 x 4096 x 4096，多个 CUDA 优化版本和 Nsight 报告
   04_large_30k/     32768 x 32768 x 32768，较大规模 CUDA 优化实验
-  07_extreme_200k/  极大规模实验目录，当前配置实际为 2048000 维矩阵
+  05_extreme_200k/  200000 x 200000 的 FP64 磁盘分块实验
   test/             CUDA hello-world 测试程序
 ```
 
 各目录通常包含：
 
-- `gen.cpp`：生成随机输入矩阵，分配输出矩阵，并调用 `run`。
-- `code.cpp` / `code.cu`：矩阵乘法实现。
+- `gen.cpp`：生成输入矩阵；极限规模 case 也可能直接把输入落盘，供后续脚本读取。
+- `code.cpp` / `code.cu` / `code.py`：矩阵乘法实现。
 - `build.sh`：编译当前目录下的实现。
 - `main`、`main0`、`main1`、`main2`、`main3`、`main4`：已编译出的可执行文件，具体取决于当前 case 的 `build.sh`。
 - `report*.nsys-rep`、`report*.sqlite`：Nsight Systems 性能分析产物。
@@ -75,15 +75,16 @@ for i in m:
 - 通过 `__syncthreads()` 保证块内线程同步
 - 当前实现面向本 case 的 `4096 x 4096 x 4096` 对齐尺寸，不保留非整除边界路径或 register tiling
 
-### 4. 大规模 WMMA 路线
+### 4. 大规模 WMMA / Tensor Core 路线
 
-`cases/04_large_30k/code0.cu` 使用 cuBLAS 作为基线实现。`cases/04_large_30k/code1.cu` 是直接 WMMA 版本。`cases/04_large_30k/code2.cu` 在 `code1.cu` 基础上加入 shared memory，`CtaK = 16`。`cases/04_large_30k/code4.cu` 保留更完整的 FP64 WMMA / padding 路径。
+`cases/04_large_30k/code0.cu` 使用 cuBLAS 作为基线实现。`cases/04_large_30k/code1.cu` 是直接 WMMA 版本。`cases/04_large_30k/code2.cu` 在 `code1.cu` 基础上加入 shared memory，`CtaK = 16`。`cases/04_large_30k/code3.cu` 是 `128 x 128 x 16` 的大 CTA WMMA 版本。`cases/04_large_30k/code4.cu` 保留更完整的 FP64 WMMA / padding 路径。`cases/04_large_30k/code5.cu` 是 row-major 的 cuBLASLt fast path。
 
 主要特征：
 
 - 使用 `nvcuda::wmma` fragment
 - tile 形状为 `8 x 8 x 4`
 - `code2.cu` 采用 shared memory 的 `8 x 16` / `16 x 128` CTA tile staging
+- `code3.cu` 采用 shared memory 的 `128 x 128 x 16` CTA tile，`32 x 8` block；warp tile 为 `32 x 64`，8 个 warp 直接覆盖完整 CTA
 - `04_large_30k` 的 WMMA 构建显式使用 `-arch=sm_80`
 
 这一部分面向支持 FP64 Tensor Core 的 NVIDIA GPU，尤其是 Ampere 及更新架构。
@@ -96,9 +97,9 @@ for i in m:
 | `cases/02_small_256` | `double` | 256 | 256 | 256 | 基础 CUDA kernel |
 | `cases/03_medium_5k` | `double` | 4096 | 4096 | 4096 | CUDA 优化对比和 profiling |
 | `cases/04_large_30k` | `double` | 32768 | 32768 | 32768 | 大规模 FP64 优化实验 |
-| `cases/07_extreme_200k` | `float` | 2048000 | 2048000 | 2048000 | 极限规模实验占位/压力测试 |
+| `cases/05_extreme_200k` | `double` | 200000 | 200000 | 200000 | FP64 磁盘生成 + 分块计算流水线 |
 
-注意：`cases/07_extreme_200k` 当前实际矩阵规模非常大，单个 `2048000 x 2048000` 的 `float` 矩阵约需要 16 TB 级别内存，普通机器无法直接运行。
+注意：`cases/05_extreme_200k` 现在是 FP64 磁盘分支。`gen.cpp` 只负责把 `A/B` 写到磁盘，后续的 `code.py` 再从磁盘读取并完成 `C` 的计算与导出。
 
 ## 构建和运行
 
@@ -119,7 +120,21 @@ for i in m:
 - `main0`：cuBLAS 基线版本，对应 `code0.cu`
 - `main1`：直接 WMMA 版本，对应 `code1.cu`
 - `main2`：shared memory WMMA 版本，对应 `code2.cu`
+- `main3`：大 CTA WMMA 版本，对应 `code3.cu`
 - `main4`：FP64 Tensor Core / WMMA 版本，对应 `code4.cu`
+- `main5`：cuBLASLt fast path，对应 `code5.cu`
+
+`cases/05_extreme_200k/build.sh` 会生成：
+
+- `main`：FP64 `gen.cpp` 生成器，把 `A.bin` / `B.bin` 写到 `data/` 目录下，顺带生成 `meta.txt`
+
+`cases/05_extreme_200k/code.py` 是 FP64 两卡分块实现，读取 `data/A.bin` 和 `data/B.bin`，按 `C00 -> C01 -> C11 -> C10` 的顺序计算，并把结果写到 `data/C.bin`。
+
+`cases/05_extreme_200k/test.py` 是一个更直接的带宽测试脚本，只测 CPU/GPU 复制时间，不做矩阵乘法。
+
+`cases/05_extreme_200k/test2.py` 是一个纯 Python I/O 带宽测试脚本，默认用 direct I/O 顺序读写同一个测试文件，并支持多线程扫 jobs。
+
+`cases/05_extreme_200k/test3.py` 是一个 FP64 `torch.matmul` 基准脚本，默认测 `32768 x 32768 x 32768`，并逐个测试当前可见 GPU。
 
 `code_old.cu` 是历史备份，不参与当前构建。
 
@@ -149,7 +164,7 @@ nsys profile -o report ./main0
 
 其中 FP64 Tensor Core / WMMA 版本需要较新的 GPU 架构支持。`cases/04_large_30k/build.sh` 使用了 `-arch=sm_80`，表示面向 Ampere 架构编译。
 
-`cases/07_extreme_200k/build.sh` 指定了 `/usr/local/cuda-13.1` 并链接 `-lcublas`，但当前 `code.cu` 仍是手写 CUDA kernel，没有实际调用 cuBLAS API。
+`cases/05_extreme_200k` 的构建阶段只需要 `g++` 编译 `gen.cpp`；计算阶段用 `python3` 跑 `code.py`，并依赖 PyTorch + CUDA runtime 在两张 GPU 上执行。
 
 ## 总结
 

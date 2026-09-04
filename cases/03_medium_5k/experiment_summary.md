@@ -3,7 +3,7 @@
 ## 目标
 
 在单卡 A800 上优化 `4096 x 4096 x 4096` 的双精度矩阵乘法。本目录当前聚焦手写 CUDA core 路径，对比基础线程映射、shared memory CTA tile，以及更大的 CTA tile + register tiling。
-这里记录的是曾经在 `03_medium_5k` 上做过的实验，其中大 CTA 版本后来迁移到了 `04_large_30k/code3.cu`。
+这里记录的是曾经在 `03_medium_5k` 上做过的实验，其中大 CTA 版本后来迁移到了 `04_large_30k/code3.cu`，并在 `04_large_30k` 里保留为 `128 x 128 x 16`、`32 x 8` block、`32 x 64` warp tile 的 Tensor Core 变体。
 
 ## A800 相关配置
 
@@ -128,12 +128,12 @@ I = 128 * 128 / (4 * (128 + 128)) = 16 FLOP/byte
 - `code.cu`：基础 CUDA core 版本。
 - `code2.cu`：`8 x 32 x 32` shared memory CTA tile。
 
-`code3.cu` 的 `128 x 128 x 32` 大 CTA tile + register tiling 实现已迁移到 `04_large_30k/code3.cu`。
+`code3.cu` 的 `128 x 128 x 32` 大 CTA tile + register tiling 实现原型后来迁移到了 `04_large_30k/code3.cu`，目前 04 目录保留的是 `128 x 128 x 16` 的 Tensor Core 版本，并用 `32 x 8` block 和 `32 x 64` warp tile 直接覆盖完整 CTA。
 
 `code4.cu` 的 FP64 WMMA / Tensor Core 实验版本已从本目录移除，本目录后续只保留基础 CUDA core 和 shared memory CTA tile。
 
 ## 风险和后续工作
 
 - `code2.cu` 和 `code3.cu` 当前面向 `4096 x 4096 x 4096` 对齐尺寸，不包含通用边界路径。
-- `code3.cu` 编译时 `ptxas` 报告寄存器使用达到 `255 registers/thread`，虽然没有 spill，但 occupancy 会受到明显限制。
+- `code3.cu` 编译时 `ptxas` 报告寄存器使用达到 `252 registers/thread`，虽然没有 spill，但 occupancy 会受到明显限制。
 - 目前仍缺少 CPU reference 或 cuBLAS reference 正确性验证。
